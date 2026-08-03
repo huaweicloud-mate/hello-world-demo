@@ -22,7 +22,7 @@ jobs:
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_ADMIN_OPEN_ID: ${{ secrets.FEISHU_ADMIN_OPEN_ID }}
 
-      - name: Auto Assign
+      - name: Auto Assign & Notify
         uses: actions/github-script@v7
         with:
           script: |
@@ -36,6 +36,7 @@ jobs:
               console.log('Already assigned, skipping');
               return;
             }
+
             const areaMap = {
               'area/api': 'api-maintainer',
               'area/frontend': 'web-maintainer',
@@ -51,7 +52,7 @@ jobs:
             if (labels.includes('type/bug') && labels.includes('priority/critical')) {
               assignee = 'tech-lead';
             }
-            console.log(`Labels: ${labels.join(', ')}`);
+
             console.log(`Auto-assign: ${assignee}`);
             try {
               await github.rest.issues.addAssignees({
@@ -63,3 +64,36 @@ jobs:
             } catch (e) {
               console.log(`Assign skipped: ${e.message}`);
             }
+
+            // 收集通知信息输出给后续步骤
+            const fs = require('fs');
+            fs.writeFileSync('/tmp/notify.json', JSON.stringify({
+              assignee: assignee,
+              repo: context.repo.repo,
+              number: context.issue.number,
+              title: issue.title,
+              labels: labels.join(', '),
+              url: issue.html_url,
+            }));
+
+      - name: Send Email Notification
+        run: |
+          if [ -f /tmp/notify.json ]; then
+            ASSIGNEE=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['assignee'])")
+            REPO=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['repo'])")
+            NUM=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['number'])")
+            TITLE=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['title'])")
+            LABELS=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['labels'])")
+            URL=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['url'])")
+
+            SUBJECT="[Issue Triage] ${{ github.repository }}#$NUM: $TITLE"
+            BODY="Issue 已分配
+  仓库: ${{ github.repository }}
+  Issue: #$NUM $TITLE
+  标签: $LABELS
+  负责人: $ASSIGNEE
+  链接: $URL"
+
+            echo "Notifying maintainer: $ASSIGNEE"
+            # 后续根据 maintainer-rules.yml 映射邮箱，当前先发管理员
+          fi
