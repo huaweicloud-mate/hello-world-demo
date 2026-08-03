@@ -37,22 +37,7 @@ jobs:
               return;
             }
 
-            const areaMap = {
-              'area/api': 'api-maintainer',
-              'area/frontend': 'web-maintainer',
-              'area/ci-cd': 'devops-maintainer',
-              'area/sdk': 'sdk-maintainer',
-              'area/security': 'security-maintainer',
-              'area/performance': 'performance-maintainer',
-            };
-            let assignee = 'default-triage';
-            for (const [area, user] of Object.entries(areaMap)) {
-              if (labels.includes(area)) { assignee = user; break; }
-            }
-            if (labels.includes('type/bug') && labels.includes('priority/critical')) {
-              assignee = 'tech-lead';
-            }
-
+            const assignee = 'shuangheaven';
             console.log(`Auto-assign: ${assignee}`);
             try {
               await github.rest.issues.addAssignees({
@@ -61,39 +46,56 @@ jobs:
                 issue_number: context.issue.number,
                 assignees: [assignee]
               });
+              console.log('Assigned successfully');
             } catch (e) {
               console.log(`Assign skipped: ${e.message}`);
             }
 
-            // 收集通知信息输出给后续步骤
             const fs = require('fs');
             fs.writeFileSync('/tmp/notify.json', JSON.stringify({
-              assignee: assignee,
               repo: context.repo.repo,
               number: context.issue.number,
               title: issue.title,
               labels: labels.join(', '),
               url: issue.html_url,
+              user: issue.user.login,
             }));
 
-      - name: Send Email Notification
+      - name: Send Email
+        env:
+          SUBJECT: "[Issue Triage] ${{ github.repository }}#${{ github.event.issue.number }}: ${{ github.event.issue.title }}"
+          BODY: |
+            Issue assigned
+            Repo: ${{ github.repository }}
+            Issue: #${{ github.event.issue.number }} ${{ github.event.issue.title }}
+            Created by: ${{ github.event.issue.user.login }}
+            URL: ${{ github.event.issue.html_url }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_REPORT_TO: ${{ secrets.EMAIL_REPORT_TO }}
         run: |
-          if [ -f /tmp/notify.json ]; then
-            ASSIGNEE=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['assignee'])")
-            REPO=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['repo'])")
-            NUM=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['number'])")
-            TITLE=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['title'])")
-            LABELS=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['labels'])")
-            URL=$(python3 -c "import json; print(json.load(open('/tmp/notify.json'))['url'])")
+          pip install requests > /dev/null 2>&1
+          python3 -c "
+          import os, smtplib
+          from email.mime.text import MIMEText
+          from email.mime.multipart import MIMEMultipart
+          from email.header import Header
 
-            SUBJECT="[Issue Triage] ${{ github.repository }}#$NUM: $TITLE"
-            BODY="Issue 已分配
-  仓库: ${{ github.repository }}
-  Issue: #$NUM $TITLE
-  标签: $LABELS
-  负责人: $ASSIGNEE
-  链接: $URL"
+          body = os.environ.get('BODY', '')
+          subject = os.environ.get('SUBJECT', 'Issue Triage')
+          smtp = smtplib.SMTP(os.environ['SMTP_HOST'], int(os.environ.get('SMTP_PORT', '587')), timeout=15)
+          smtp.starttls()
+          smtp.login(os.environ['SMTP_USER'], os.environ['SMTP_PASS'])
 
-            echo "Notifying maintainer: $ASSIGNEE"
-            # 后续根据 maintainer-rules.yml 映射邮箱，当前先发管理员
-          fi
+          msg = MIMEMultipart('alternative')
+          msg['From'] = os.environ['SMTP_USER']
+          msg['To'] = os.environ.get('EMAIL_REPORT_TO', os.environ['SMTP_USER'])
+          msg['Subject'] = Header(subject, 'utf-8')
+          html = f'<html><body style="font-family:Arial,sans-serif;max-width:600px"><div style="background:#0366d6;color:#fff;padding:16px;border-radius:8px 8px 0 0"><h2 style="margin:0">Issue Triage Notification</h2></div><div style="border:1px solid #e1e4e8;padding:16px"><pre style="white-space:pre-wrap;font-family:Consolas,monospace">{body}</pre><p><a href=\"'+"'${{ github.event.issue.html_url }}'"+'\" style="background:#2ea44f;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px">View Issue</a></p></div></body></html>'
+          msg.attach(MIMEText(html, 'html', 'utf-8'))
+          smtp.sendmail(os.environ['SMTP_USER'], [os.environ.get('EMAIL_REPORT_TO', os.environ['SMTP_USER'])], msg.as_string())
+          smtp.quit()
+          print('Email sent')
+          "
