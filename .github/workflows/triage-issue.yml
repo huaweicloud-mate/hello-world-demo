@@ -21,3 +21,40 @@ jobs:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_ADMIN_OPEN_ID: ${{ secrets.FEISHU_ADMIN_OPEN_ID }}
+
+      - name: Auto Assign
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = (issue.labels || []).map(l => l.name);
+            if (issue.assignees && issue.assignees.length > 0) {
+              console.log('Already assigned, skipping');
+              return;
+            }
+            const areaMap = {
+              'area/api': 'api-maintainer',
+              'area/frontend': 'web-maintainer',
+              'area/ci-cd': 'devops-maintainer',
+              'area/sdk': 'sdk-maintainer',
+              'area/security': 'security-maintainer',
+              'area/performance': 'performance-maintainer',
+            };
+            let assignee = 'default-triage';
+            for (const [area, user] of Object.entries(areaMap)) {
+              if (labels.includes(area)) { assignee = user; break; }
+            }
+            if (labels.includes('type/bug') && labels.includes('priority/critical')) {
+              assignee = 'tech-lead';
+            }
+            console.log(`Auto-assign: ${assignee}`);
+            try {
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                assignees: [assignee]
+              });
+            } catch (e) {
+              console.log(`Assign skipped: ${e.message}`);
+            }
