@@ -1,0 +1,10 @@
+# CODEOWNERS - 自动指定 PR Reviewer
+
+# 全局默认 reviewer
+* @shuangheaven
+
+# 按目录分配
+/api/          @shuangheaven
+/frontend/     @shuangheaven
+/docs/         @shuangheaven
+/.github/      @shuangheaven
