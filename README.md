@@ -2,3 +2,4 @@
 A simple hello world demo project for testing the repo creation bot
 test
 sync
+## 快速开始
