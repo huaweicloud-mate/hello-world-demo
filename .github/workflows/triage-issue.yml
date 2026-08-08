@@ -23,7 +23,7 @@ jobs:
           FEISHU_ADMIN_OPEN_ID: ${{ secrets.FEISHU_ADMIN_OPEN_ID }}
 
       - name: Auto Assign & Notify
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data: issue } = await github.rest.issues.get({
